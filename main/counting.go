@@ -39,7 +39,7 @@ type LLFD struct {
 
     sampled uint64
 
-    ctable *cuckoo.CuckooTable
+    tbl map[uint64]float64
 }
 
 type perf struct {
@@ -60,11 +60,8 @@ func (p *perf) GetElapsed() time.Duration {
 var rng = getRng(uint32(time.Now().UnixNano()))
 
 func main() {
-    // var pkts [numPkt]packet
-    // genPackets(&pkts)
     var p1 perf
     var pkt packet
-    // var counter [128]uint64
 
     p1.Start()
     dtctr := NewLLFD()
@@ -73,24 +70,14 @@ func main() {
         pkt.size = func() uint64 { if pkt.flowID == 0 { return r } else { return 1 } }()
         pkt.flowID++
         pkt.ts = uint64(i*25)
-        // idx := murmur3.Murmur3_32(pkt.flowID, dtctr.fastCyc) & (m - 1)
-        // counter[idx] += pkt.size
-        if dtctr.Recv(&pkt) {
-            break
-        }
+        dtctr.Recv(&pkt)
     }
-    // elapsed := time.Since(start)
-    // fmt.Println(elapsed)
-    // start = time.Now()
-    // dtctr.fastCyc++
-    // dtctr.detect()
     p1.End()
     fmt.Println(p1.GetElapsed())
 }
 
 func (dtctr *LLFD) Recv(pkt *packet) bool {
     if pkt.ts - dtctr.fastStart >= dtctr.fastCycSz {
-        // fmt.Println(dtctr.counter[:m])
         dtctr.counter = dtctr.nextCounter(dtctr.counter)
         for i := 0; i < m; i++ {
             dtctr.counter[i] = 0
@@ -99,9 +86,7 @@ func (dtctr *LLFD) Recv(pkt *packet) bool {
         dtctr.fastStart = pkt.ts
     }
     if pkt.ts - dtctr.slowStart >= dtctr.slowCycSz {
-        if dtctr.detect() {
-            // return true
-        }
+        dtctr.detect()
         dtctr.slowCyc += 1
         dtctr.slowStart = pkt.ts
         dtctr.slowFStart = dtctr.fastCyc
@@ -111,62 +96,30 @@ func (dtctr *LLFD) Recv(pkt *packet) bool {
     idx := murmur3.Murmur3_32(pkt.flowID, dtctr.fastCyc) & (m - 1)
     dtctr.counter[idx] += pkt.size
 
-    expected := (pkt.ts - dtctr.slowStart) >> 11
-    if dtctr.sampled < expected {
-        dtctr.ctable.Insert(pkt.flowID)
-        dtctr.sampled += 1
-    }
     return false
 }
 
 func (dtctr *LLFD) detect() bool {
-    entries := dtctr.entries[:]
-    cc := 0
-    for i := range dtctr.ctable.Entries {
-        entry := dtctr.ctable.Entries[i]
-        if entry.Key == 0 {
-            continue
-        }
-        entries[cc] = entry
-        cc++
-    }
-    entries = entries[:cc]
-
     counter := dtctr.slowCounter
     for t := dtctr.slowFStart; t < dtctr.fastCyc; t++ {
         var counterSize [m]uint64
-        for i := range entries {
-            idx := murmur3.Murmur3_32(entries[i].Key, t) & (m - 1)
+        for key := range dtctr.tbl {
+            idx := murmur3.Murmur3_32(key, t) & (m - 1)
             counterSize[idx]++
         }
-        for i := range entries {
-            entry := &entries[i]
-            idx := murmur3.Murmur3_32(entry.Key, t) & (m - 1)
-            entry.Value += float64(counter[idx]) / float64(counterSize[idx])
+        for key := range dtctr.tbl {
+            idx := murmur3.Murmur3_32(key, t) & (m - 1)
+            dtctr.tbl[key] += float64(counter[idx]) / float64(counterSize[idx])
         }
-        // fmt.Println(counter[:m])
-        // fmt.Println(counterSize)
-        fmt.Println(counter[0] / counterSize[0])
         counter = dtctr.nextCounter(counter)
     }
     max := 0.0
-    for i := range dtctr.ctable.Entries {
-        entry := &dtctr.ctable.Entries[i]
-        if entry.Key == 0 {
-            continue
-        }
-        *entry = entries[0]
-        entries = entries[1:]
-        if entry.Value >= max {
-            max = entry.Value
+    for _, val := range dtctr.tbl {
+        if val >= max {
+            max = val
         }
     }
-    // for _, entry := range entries {
-        // if entry.Value >= max {
-            // max = entry.Value
-        // }
-    // }
-    val, _ := dtctr.ctable.LookUp(1)
+    val := dtctr.tbl[1]
     fmt.Println(max, val)
     return max <= val
 }
@@ -174,8 +127,11 @@ func NewLLFD() *LLFD {
     dtctr := LLFD{
         buf: make([]uint64, m*d*2),
         fastCycSz: 15625000,
-        slowCycSz: 1000000000,// / 4,
-        ctable: cuckoo.NewCuckoo(n*4),
+        slowCycSz: 1000000000 / 4,
+        tbl: make(map[uint64]float64),
+    }
+    for i := 1; i <= n; i++ {
+        dtctr.tbl[uint64(i)] = 0
     }
     dtctr.counter = dtctr.buf[:]
     dtctr.slowCounter = dtctr.counter
@@ -197,17 +153,11 @@ func genPacket(i int) *packet {
 }
 
 func genPackets(pkts *[numPkt]packet) {
-    // cnt := 0
-    //rng := getRng(uint32(time.Now().UnixNano()))
     for i := 0; i < numPkt; i++ {
         flowID := uint64(rng() & (n-1))
-        // if flowID == 0 {
-            // cnt++
-        // }
         size := func() uint64 { if flowID == 0 { return 10 } else { return 1 } }()
         pkts[i] = packet{flowID+1, size, uint64(i * 25)}
     }
-    // fmt.Println(cnt)
 }
 
 func getRng(seed uint32) func() uint32 {
