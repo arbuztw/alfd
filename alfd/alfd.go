@@ -57,7 +57,7 @@ func (dtctr *Alfd) Recv(flowID, size, ts uint64) {
     }
     // advanced to next slow cycle
     if ts - dtctr.slowStart >= dtctr.slowCycSz {
-        dtctr.detect(ts)
+        dtctr.detect()
 
         dtctr.slowCyc += 1
         dtctr.slowStart = ts
@@ -74,12 +74,12 @@ func (dtctr *Alfd) Recv(flowID, size, ts uint64) {
     expected := (ts - dtctr.slowStart) >> 9
     if dtctr.sampled < expected {
         value, _ := dtctr.ctable.LookupI(flowID, true)
-        value.LastSeen = ts
+        value.LastSeen = dtctr.slowCyc
         dtctr.sampled += 1
     }
 }
 
-func (dtctr *Alfd) detect(now uint64) bool {
+func (dtctr *Alfd) detect() bool {
     entries := dtctr.entries[:]
     cc := 0
     for i := range dtctr.ctable.Entries {
@@ -87,14 +87,16 @@ func (dtctr *Alfd) detect(now uint64) bool {
         if entry.Key == 0 {
             continue
         }
-        /*if now - entry.LastSeen > dtctr.slowCycSz * 2 {
+        // remove the flowID from cuckoo if it's not seen for longer then 2 slow cycles
+        if dtctr.slowCyc - entry.LastSeen > 2 {
             entry.Key = 0
             continue
-        }*/
+        }
         entries[cc] = *entry
         cc++
     }
     entries = entries[:cc]
+    // fmt.Println(cc)
 
     counter := dtctr.slowCounter
     for t := dtctr.slowFStart; t < dtctr.fastCyc; t++ {

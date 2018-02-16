@@ -32,7 +32,7 @@ type Entry struct {
     Key   uint64
     Size     uint64
     Num      uint64
-    LastSeen uint64
+    LastSeen uint32
 }
 
 type CuckooTable struct {
