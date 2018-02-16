@@ -24,22 +24,15 @@ import (
     "encoding/binary"
     "fmt"
     "os"
-    // "runtime"
     "math"
-    // "unsafe"
-    //"bitbucket/cuckoohash/murmur"
-)
-
-const (
-    maxLen      = 100
-    minIdxBytes = 20
-    maxLoadFact = 0.5
 )
 
 // The key has to be uint32. But one can adjust the value to whatever type one wants.
 type Entry struct {
     Key   uint64
-    Value float64
+    Size     uint64
+    Num      uint64
+    LastSeen uint64
 }
 
 type CuckooTable struct {
@@ -84,42 +77,33 @@ func (c *CuckooTable) getHashedKeys(key uint64) (uint32, uint32) {
     return h1, h2
 }
 
-// LookUp() looks an element up in the table.
-func (c *CuckooTable) LookUp(key uint64) (float64, bool) {
+// Lookup the entry. Insert the key if it is not exist when `insert` is set to
+// be true.
+func (c *CuckooTable) LookupI(key uint64, insert bool) (*Entry, bool) {
     h1, h2 := c.getHashedKeys(key)
     if entry := &c.Entries[h1]; entry.Key == key {
-        return entry.Value, true
-    }
-
-    if entry := &c.Entries[h2]; entry.Key == key {
-        return entry.Value, true
-    }
-
-    return 0, false
-}
-
-// Insert() inserts an element at the appropriate position in the table.
-func (c *CuckooTable) Insert(key uint64/*, value float64*/) bool {
-    h1, h2 := c.getHashedKeys(key)
-
-    if entry := &c.Entries[h1]; entry.Key == key {
-        return true
+        return entry, true
     }
     if entry := &c.Entries[h2]; entry.Key == key {
-        return true
+        return entry, true
     }
 
-    newEntry := Entry{key, 0}
+    if !insert {
+        return nil, false
+    }
+
+    newEntry := Entry{key, 0, 0, 0}
     index := h1
+    retIndex := index
 
     for {
         oldEntry := c.Entries[index]
         if oldEntry.Key == 0 {
             c.Entries[index] = newEntry
-            return true
+            break
         }
         if oldEntry.Key == key {
-            return false
+            break
         }
         c.Entries[index] = newEntry
 
@@ -133,82 +117,6 @@ func (c *CuckooTable) Insert(key uint64/*, value float64*/) bool {
 
         newEntry = oldEntry
     }
+
+    return &c.Entries[retIndex], true
 }
-
-// Delete() deletes an element.
-/*func (c *CuckooTable) Delete(key uint32) {
-    h1, h2 := c.getHashedKeys(key)
-    if entry := c.Entries[h1]; entry != nil && entry.Key == key {
-        c.Entries[h1] = nil
-        c.nEntries -= 1
-    }
-
-    if entry := c.Entries[h2]; entry != nil && entry.Key == key {
-        c.Entries[h2] = nil
-        c.nEntries -= 1
-    }
-
-    // If the load factor of the table is too low, shrink the table.
-    if c.LoadFactor() < maxLoadFact/2 {
-        c.shrink()
-    }
-
-}
-
-func (c *CuckooTable) rehash() {
-    c.nEntries = 0
-    c.nRehashes += 1
-    c.reorganize()
-}
-
-func (c *CuckooTable) grow() {
-    c.idxBytes += 1
-    c.nEntries = 0
-    c.nRehashes = 0
-
-    if c.idxBytes > maxLen {
-        panic("Too many elements")
-    }
-
-    c.reorganize()
-}
-
-func (c *CuckooTable) shrink() {
-    if c.idxBytes <= minIdxBytes {
-        return
-    }
-    c.idxBytes -= 1
-    c.nEntries = 0
-    c.nRehashes = 0
-
-    c.reorganize()
-}
-
-func (c *CuckooTable) reorganize() {
-    tempTab := &CuckooTable{}
-    *tempTab = *c
-    c.resetSeed()
-
-    c.Entries = make([]*Entry, 1<<c.idxBytes)
-
-    for _, val := range tempTab.Entries {
-        if val != nil {
-            c.Insert(val.Key, val.Value)
-        }
-    }
-
-    defer func() {
-        tempTab = nil
-        runtime.GC()
-    }()
-}
-
-func (c *CuckooTable) LoadFactor() float64 {
-    tLen := 1 << c.idxBytes
-    return float64(c.nEntries) / float64(tLen)
-}
-
-func (c *CuckooTable) GetNEntries() uint32 {
-    return c.nEntries
-}
-*/
