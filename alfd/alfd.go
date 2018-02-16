@@ -15,6 +15,7 @@ type Alfd struct {
     buf     []uint64
     counter []uint64
     entries [n]cuckoo.Entry
+    topk    [m+1]float64
 
     fastCyc   uint32  // id of current fast cycle
     fastCycSz uint64  // duration of a fast cycle
@@ -110,7 +111,10 @@ func (dtctr *Alfd) detect(now uint64) bool {
         }
         counter = dtctr.nextCounter(counter)
     }
-    max := 0.0
+
+    for k := 0; k < m; k++ {
+        dtctr.topk[k] = 0.0
+    }
     for i := range dtctr.ctable.Entries {
         entry := &dtctr.ctable.Entries[i]
         if entry.Key == 0 {
@@ -119,17 +123,23 @@ func (dtctr *Alfd) detect(now uint64) bool {
         *entry = entries[0]
         entries = entries[1:]
         val := float64(entry.Size) / float64(entry.Num)
-        if val >= max {
-            max = val
+        k := m
+        for ; k > 0; k-- {
+            if val <= dtctr.topk[k-1] {
+                break
+            }
+            dtctr.topk[k] = dtctr.topk[k-1]
         }
+        dtctr.topk[k] = val
     }
+    thold := dtctr.topk[m-1]
     entry, _ := dtctr.ctable.LookupI(1, false) // the large flow
     val := 0.0
     if entry != nil {
         val = float64(entry.Size) / float64(entry.Num)
     }
-    fmt.Println(max, val, max <= val)
-    return max <= val
+    fmt.Println(thold, val, thold <= val)
+    return thold <= val
 }
 
 func (dtctr *Alfd) nextCounter(counter []uint64) []uint64 {
