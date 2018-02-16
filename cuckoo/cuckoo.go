@@ -42,6 +42,9 @@ type CuckooTable struct {
     nEntries  uint32
     nRehashes uint32
     tableLen  uint32
+
+    marking   []uint64
+    serial    uint64
 }
 
 // resetSeed() resets the current seed. Used during a rehash of the table.
@@ -56,11 +59,11 @@ func (c *CuckooTable) resetSeed() {
 }
 
 func NewCuckoo(size uint32) *CuckooTable {
-    entries := make([]Entry, size)
     c := &CuckooTable{
-        Entries:  entries,
+        Entries:  make([]Entry, size),
         idxBytes: uint32(math.Log2(float64(size))),
         tableLen: size,
+        marking:  make([]uint64, size),
     }
     c.resetSeed()
 
@@ -95,6 +98,7 @@ func (c *CuckooTable) LookupI(key uint64, insert bool) (*Entry, bool) {
     newEntry := Entry{key, 0, 0, 0}
     index := h1
     retIndex := index
+    c.serial += 1
 
     for {
         oldEntry := c.Entries[index]
@@ -102,10 +106,11 @@ func (c *CuckooTable) LookupI(key uint64, insert bool) (*Entry, bool) {
             c.Entries[index] = newEntry
             break
         }
-        if oldEntry.Key == key {
+        if c.marking[index] == c.serial {  // cycle detected
             break
         }
         c.Entries[index] = newEntry
+        c.marking[index] = c.serial
 
         h1, h2 = c.getHashedKeys(oldEntry.Key)
 
