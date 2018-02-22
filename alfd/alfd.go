@@ -42,10 +42,13 @@ func NewAlfd(fastCycSz, slowCycSz uint64) *Alfd {
     }
     dtctr.counter = dtctr.buf[:]
     dtctr.slowCounter = dtctr.counter
+    for i := 0; i < n; i++ {
+        dtctr.ctable.LookupI(uint64(i), true)
+    }
     return &dtctr
 }
 
-func (dtctr *Alfd) Recv(flowID, size, ts uint64) {
+func (dtctr *Alfd) Recv(flowID, size, ts uint64) bool {
     // advanced to next fast cycle
     if ts - dtctr.fastStart >= dtctr.fastCycSz {
         dtctr.counter = dtctr.nextCounter(dtctr.counter)
@@ -57,7 +60,9 @@ func (dtctr *Alfd) Recv(flowID, size, ts uint64) {
     }
     // advanced to next slow cycle
     if ts - dtctr.slowStart >= dtctr.slowCycSz {
-        dtctr.detect()
+        if dtctr.detect() {
+            return true
+        }
 
         dtctr.slowCyc += 1
         dtctr.slowStart = ts
@@ -71,12 +76,13 @@ func (dtctr *Alfd) Recv(flowID, size, ts uint64) {
     dtctr.counter[idx] += size
 
     // sub-sample flowIDs
-    expected := (ts - dtctr.slowStart) >> 9
+    /*expected := (ts - dtctr.slowStart) >> 9
     if dtctr.sampled < expected {
         value, _ := dtctr.ctable.LookupI(flowID, true)
         value.LastSeen = dtctr.slowCyc
         dtctr.sampled += 1
-    }
+    }*/
+    return false
 }
 
 func (dtctr *Alfd) detect() bool {
@@ -88,10 +94,10 @@ func (dtctr *Alfd) detect() bool {
             continue
         }
         // remove the flowID from cuckoo if it's not seen for longer then 2 slow cycles
-        if dtctr.slowCyc - entry.LastSeen > 2 {
-            entry.Key = 0
-            continue
-        }
+        // if dtctr.slowCyc - entry.LastSeen > 2 {
+            // entry.Key = 0
+            // continue
+        // }
         entries[cc] = *entry
         cc++
     }
@@ -140,8 +146,8 @@ func (dtctr *Alfd) detect() bool {
     if entry != nil {
         val = float64(entry.Size) / float64(entry.Num)
     }
-    fmt.Println(thold, val, thold <= val)
-    return thold <= val
+    fmt.Println(thold, val, val >= thold)
+    return val >= thold
 }
 
 func (dtctr *Alfd) nextCounter(counter []uint64) []uint64 {
