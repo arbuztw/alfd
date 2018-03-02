@@ -1,9 +1,11 @@
 package flowgen
 
 import (
-    "math/rand"
-    // "../rand"
-    "time"
+    // "math/rand"
+    "../rand"
+    // "time"
+    // "fmt"
+    // "math"
 )
 
 
@@ -13,67 +15,104 @@ type Packet struct {
     ts     uint64    // timestamp in ns
 }
 
+type flow struct {
+    id   uint64
+    npkt uint64
+    tick uint64
+}
+
+type flowQueue struct {
+    buf []flow
+    fr int
+    bk int
+}
+
 type FlowGenerator struct {
-    flowIDs []uint64
-    idx int
-    timestamp uint64
+    numFlow  uint64
+    avail    []flow
+    overuse  flowQueue
+    numAvail int
+    tick uint64
     timedelta uint64
     rate float64
+    gamma uint64
+    beta uint64
 }
 
-func ResetSeed() {
-    rand.Seed(time.Now().UnixNano())
-}
+// func ResetSeed() {
+    // rand.Seed(time.Now().UnixNano())
+// }
 
-func NewFlowGenerator(numFlow, numPkt int, r float64) *FlowGenerator {
-    k := 3
-    flowIDs := make([]uint64, numFlow*k)
-
-    idx := 0
-    for i := 1; i <= numFlow; i++ {
-        for j := 0; j < k; j++ {
-            flowIDs[idx] = uint64(i)
-            idx++
-        }
-    }
-    return &FlowGenerator{
-        flowIDs: flowIDs,
-        idx: 0,
-        timestamp: 0,
+func NewFlowGenerator(numFlow, numPkt int, gamma, beta uint64, r float64) *FlowGenerator {
+    g := FlowGenerator {
+        numFlow: uint64(numFlow),
+        avail: make([]flow, numFlow),
+        numAvail: numFlow,
         timedelta: uint64(1000000000 / numPkt),
+        beta: beta,
         rate: r,
     }
+    g.overuse.setCap(numFlow+1)
+    for i := 0; i < numFlow; i++ {
+        g.avail[i] = flow { id: uint64(i+1) }
+    }
+    return &g
 }
 
 func (g *FlowGenerator) Next() Packet {
-    if g.idx == 0 {
-        shuffle(g.flowIDs)
+    // fmt.Println("tick", g.tick, g.overuse.isEmpty())
+    for !g.overuse.isEmpty() {
+        flow := g.overuse.top()
+        // fmt.Println("tick", g.tick, flow.tick)
+        if g.tick - flow.tick < g.numFlow {
+            break
+        }
+        g.avail[g.numAvail] = g.overuse.pop()
+        g.numAvail++
+        // fmt.Println("+", flow.id)
+        flow = g.overuse.top()
     }
 
-    pkt := Packet{}
-    pkt.flowID = g.flowIDs[g.idx]
-    if pkt.flowID == 1 {
-        pkt.size = uint64(g.rate * 10)
-    } else {
-        pkt.size = 10
+    // fmt.Println(g.avail[:g.numAvail])
+    k := int(rand.Rand()) % g.numAvail
+    flow := &g.avail[k]
+    if flow.npkt == 0 {
+        flow.tick = g.tick
     }
-    pkt.ts = g.timestamp
+    flow.npkt += 1
+    size := uint64(10)
+    if flow.id == 1 {
+        size = uint64(10 * g.rate)
+    }
+    pkt := Packet{flow.id, size, g.tick * g.timedelta}
 
-    g.timestamp += g.timedelta
-    g.idx++
-    if g.idx >= len(g.flowIDs) {
-        g.idx = 0
+    if diff := g.tick - flow.tick; diff >= g.numFlow {
+        leak := diff / g.numFlow
+        if leak <= flow.npkt {
+            flow.npkt -= leak
+        } else {
+            flow.npkt = 0
+        }
+        flow.tick += leak * g.numFlow
     }
+
+    if flow.npkt >= g.beta {
+        g.overuse.push(*flow)
+        g.avail[k] = g.avail[g.numAvail-1]
+        g.numAvail--
+    }
+
+    g.tick++
 
     return pkt
 }
-
+/*
 func shuffle(s []uint64) {
     rand.Shuffle(len(s), func(i, j int) {
         s[i], s[j] = s[j], s[i]
     })
 }
-
+*/
 func (p *Packet) GetID() uint64 {
     return p.flowID
 }
@@ -86,38 +125,40 @@ func (p *Packet) GetTs() uint64 {
     return p.ts
 }
 
-/*
-type heapElem struct {
-    key uint32
-    val uint64
+func (q *flowQueue) setCap(capacity int) {
+    q.buf = make([]flow, capacity)
 }
 
-type randHeap struct {
-    data []heapElem
+func (q *flowQueue) push(f flow) {
+    // fmt.Println("push", f)
+    q.buf[q.bk] = f
+    q.bk++
+    if q.bk >= len(q.buf) {
+        q.bk = 0
+    }
 }
 
-func (hp *randHeap) Len() int {
-    return len(hp.data)
-}
-
-func Less(i, j int) bool {
-    return hp.data[i] < hp.data[j]
-}
-
-func Swap(i, j int) {
-    tmp := hp.data[i]
-    hp.data[i] = hp.data[j]
-    hp.data[j] = tmp
-}
-
-func (hp *randHeap) Push(x uint64) {
-    hp.data = append(hp.data, heapElem{x, rand.rand()})
-}
-
-func (hp *randHeap) Pop() uint64 {
-    last := len(hp.data) - 1
-    ret := hp.data[last]
-    hp.data = hp.data[:last]
+func (q *flowQueue) pop() flow {
+    ret := q.buf[q.fr]
+    q.fr++
+    if q.fr >= len(q.buf) {
+        q.fr = 0
+    }
     return ret
+}
+
+func (q *flowQueue) top() *flow {
+    return &q.buf[q.fr]
+}
+
+func (q *flowQueue) isEmpty() bool {
+    return q.fr == q.bk
+}
+/*
+func max(a, b uint64) uint64 {
+    if a >= b {
+        return a
+    }
+    return b
 }
 */
