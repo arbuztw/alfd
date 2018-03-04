@@ -7,14 +7,14 @@ import (
 )
 
 const (
-    n = 131072 // number of flowID
+    // n = 131072 // number of flowID
     m = 128    // number of counter per fast cycle
 )
 
 type Alfd struct {
     buf     []uint64
     counter []uint64
-    entries [n]cuckoo.Entry
+    entries []cuckoo.Entry
     topk    [m+1]float64
 
     fastCyc   uint32  // id of current fast cycle
@@ -32,17 +32,18 @@ type Alfd struct {
     ctable *cuckoo.CuckooTable
 }
 
-func NewAlfd(fastCycSz, slowCycSz uint64) *Alfd {
+func NewAlfd(n uint32, fastCycSz, slowCycSz uint64) *Alfd {
     d := slowCycSz / fastCycSz + 1 // number of fast cycles in a slow cycle
     dtctr := Alfd{
         buf:       make([]uint64, m*d),
+        entries:   make([]cuckoo.Entry, n),
         fastCycSz: fastCycSz,
         slowCycSz: slowCycSz,
         ctable:    cuckoo.NewCuckoo(n * 4),
     }
     dtctr.counter = dtctr.buf[:]
     dtctr.slowCounter = dtctr.counter
-    for i := 0; i < n; i++ {
+    for i := 0; i < int(n); i++ {
         dtctr.ctable.LookupI(uint64(i), true)
     }
     return &dtctr
