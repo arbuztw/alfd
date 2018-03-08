@@ -1,16 +1,15 @@
 package main
 
 import (
-    // "../alfd"
+    "../alfd"
     "fmt"
     "flag"
-    // "time"
     // "math/rand"
     "../flowgen"
     // "log"
-    "time"
+    // "time"
     "os"
-    "github.com/netsec-ethz/lfd/eardet"
+    // "github.com/netsec-ethz/lfd/eardet"
 )
 
 const (
@@ -22,7 +21,7 @@ const (
 )
 
 var (
-    n uint32
+    n int
     pktps int
     r float64
 )
@@ -43,7 +42,7 @@ func main() {
     optr := flag.String("o", "", "Log file")
     flag.Parse()
 
-    n = uint32(*nptr)
+    n = *nptr
     pktps = *pptr
     r = *rptr
     trial := *tptr
@@ -60,17 +59,16 @@ func main() {
     defer f.Close()
     fmt.Fprintln(f, "r =", r, "n =", n, "pkt/s =", pktps)
 
-    flowgen.ResetSeed()
     delay := 0.0
     for t := 0; t < trial; t++ {
-        g := flowgen.NewFlowGenerator(int(n), pktps, r)
-        // dtctr := alfd.NewAlfd(uint32(n), 1000000000 / 64, 1000000000 / 4)
-        dtctr := eardet.NewConfigedEardetDtctr(1024, 10000, 640, 1000, 10000000)
+        g := flowgen.NewFlowGenerator(n, pktps, uint64(pktps / n), 1, r)
+        dtctr := alfd.NewAlfd(uint32(n), 1000000000 / 16, 1000000000 / 4)
+        // dtctr := eardet.NewConfigedEardetDtctr(1024, 10000, 640, 1000, 10000000)
         i := 0
         for {
             pkt := g.Next()//genPacket(i)
-            // if dtctr.Recv(pkt.GetID(), pkt.GetSize(), pkt.GetTs()) {
-            if dtctr.Detect(uint32(pkt.GetID()), uint32(pkt.GetSize()), time.Duration(pkt.GetTs())) {
+            if dtctr.Recv(pkt.GetID(), pkt.GetSize(), pkt.GetTs()) {
+            // if dtctr.Detect(uint32(pkt.GetID()), uint32(pkt.GetSize()), time.Duration(pkt.GetTs())) {
                 ts := float64(pkt.GetTs()) / 1000000000.0
                 fmt.Println(t, ts)
                 fmt.Fprintln(f, ts)
