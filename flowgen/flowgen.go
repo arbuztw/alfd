@@ -1,11 +1,7 @@
 package flowgen
 
 import (
-    // "math/rand"
     "../rand"
-    // "time"
-    // "fmt"
-    // "math"
 )
 
 
@@ -39,10 +35,6 @@ type FlowGenerator struct {
     beta uint64
 }
 
-// func ResetSeed() {
-    // rand.Seed(time.Now().UnixNano())
-// }
-
 func NewFlowGenerator(numFlow, numPkt int, gamma, beta uint64, r float64) *FlowGenerator {
     g := FlowGenerator {
         numFlow: uint64(numFlow),
@@ -60,20 +52,16 @@ func NewFlowGenerator(numFlow, numPkt int, gamma, beta uint64, r float64) *FlowG
 }
 
 func (g *FlowGenerator) Next() Packet {
-    // fmt.Println("tick", g.tick, g.overuse.isEmpty())
     for !g.overuse.isEmpty() {
         flow := g.overuse.top()
-        // fmt.Println("tick", g.tick, flow.tick)
         if g.tick - flow.tick < g.numFlow {
             break
         }
         g.avail[g.numAvail] = g.overuse.pop()
         g.numAvail++
-        // fmt.Println("+", flow.id)
         flow = g.overuse.top()
     }
 
-    // fmt.Println(g.avail[:g.numAvail])
     k := int(rand.Rand()) % g.numAvail
     flow := &g.avail[k]
     if flow.npkt == 0 {
@@ -106,13 +94,7 @@ func (g *FlowGenerator) Next() Packet {
 
     return pkt
 }
-/*
-func shuffle(s []uint64) {
-    rand.Shuffle(len(s), func(i, j int) {
-        s[i], s[j] = s[j], s[i]
-    })
-}
-*/
+
 func (p *Packet) GetID() uint64 {
     return p.flowID
 }
@@ -130,7 +112,6 @@ func (q *flowQueue) setCap(capacity int) {
 }
 
 func (q *flowQueue) push(f flow) {
-    // fmt.Println("push", f)
     q.buf[q.bk] = f
     q.bk++
     if q.bk >= len(q.buf) {
@@ -154,11 +135,3 @@ func (q *flowQueue) top() *flow {
 func (q *flowQueue) isEmpty() bool {
     return q.fr == q.bk
 }
-/*
-func max(a, b uint64) uint64 {
-    if a >= b {
-        return a
-    }
-    return b
-}
-*/
